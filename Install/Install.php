@@ -1,21 +1,23 @@
 <?php
 
 /**
- * UIoT Service Layer.
- *
- *                          88
- *                          ""              ,d
- *                                          88
- *              88       88 88  ,adPPYba, MM88MMM
- *              88       88 88 a8"     "8a  88
- *              88       88 88 8b       d8  88
- *              "8a,   ,a88 88 "8a,   ,a8"  88,
- *               `"YbbdP'Y8 88  `"YbbdP"'   "Y888
+ *                   .-'''-.
+ *                  '   _    \
+ *           .--. /   /` '.   \
+ *           |__|.   |     \  '
+ *           .--.|   '      |  '  .|
+ *           |  |\    \     / / .' |_
+ *    _    _ |  | `.   ` ..' /.'     |
+ *   | '  / ||  |    '-...-'`'--.  .-'
+ *  .' | .' ||  |               |  |
+ *  /  | /  ||__|               |  |
+ * |   `'.  |      UIoT RAISe   |  '.'
+ * '   .'|  '/        alpha     |   /
+ *  `-'  `--'                   `'-'.
  *
  * @author Universal Internet of Things
- * @license MIT <https://opensource.org/licenses/MIT>
+ * @license Apache 2 <https://opensource.org/licenses/Apache-2.0>
  * @copyright University of Brasília
- * important docs http://developer.couchbase.com/documentation/server/current/sdk/php/start-using-sdk.html
  */
 
 // Set Time Limit to 0
@@ -42,7 +44,23 @@ function createBucket(array $details, array $credentials)
         'threadsNumber' => 3,
     ];
 
-    return communicateCouchbase('pools/default/buckets', $credentials, $bucket);
+    $response = communicateCouchbase('pools/default/buckets', $credentials, $bucket);
+
+    $try = 0;
+
+    while ($response['info']['http_code'] != 202) {
+        $response = communicateCouchbase('pools/default/buckets', $credentials, $bucket);
+
+        if ($try >= 4) {
+            echo writeText("Failed to create Bucket on Couchbase after {$try} times. Aborting.", '41', true);
+
+            return false;
+        }
+
+        $try++;
+    }
+
+    return $response['body'];
 }
 
 /**
@@ -90,10 +108,12 @@ function communicateCouchbase(string $url, array $credentials, $post = null)
 
     $server_output = curl_exec($ch);
 
+    $info = curl_getinfo($ch);
+
     curl_setopt($ch, CURLOPT_VERBOSE, true);
     curl_close($ch);
 
-    return json_decode($server_output);
+    return ['body' => json_decode($server_output), 'info' => $info];
 }
 
 /**
@@ -210,7 +230,7 @@ while (!$connectionOK) {
         echo writeText("Your credentials aren't correct. Try again please.", '1;31', true);
     } finally {
         echo PHP_EOL;
-        
+
         echo writeText('Connected Successfully to Couchbase Server.', '0;32', true);
 
         $connectionOK = true;
@@ -225,7 +245,7 @@ echo PHP_EOL;
 
 echo writeText('INFO', '46').'Getting Information from the Cluster via API....'.PHP_EOL;
 
-$serverInfo = communicateCouchbase('pools/default', $credentials);
+$serverInfo = communicateCouchbase('pools/default', $credentials)['body'];
 
 $memoryQuota = $serverInfo->memoryQuota;
 
@@ -251,13 +271,15 @@ foreach ($buckets as $bucketName => $bucketMemory) {
     if ($bucketName != 'notcreatable') {
         echo progressBar($progress++, 7, "Creating Bucket: {$bucketName}.              ");
     }
-    
+
     sleep(2);
 
-    createBucket(['name' => $bucketName, 'memory' => $bucketMemory], $credentials);
+    if (createBucket(['name' => $bucketName, 'memory' => $bucketMemory], $credentials) == false) {
+        exit(1);
+    }
 }
 
-echo progressBar(7, 7, "Buckets Created Successfully.");
+echo progressBar(7, 7, 'Buckets Created Successfully.');
 
 $readyToFill = false;
 
@@ -268,7 +290,7 @@ echo writeText('INFO', '46').'Waiting Buckets to be Ready....'.PHP_EOL;
 $progress = 0;
 
 while (!$readyToFill) {
-    $data = array_filter(communicateCouchbase('pools/default/buckets', $credentials), function ($bucket) {
+    $data = array_filter(communicateCouchbase('pools/default/buckets', $credentials)['body'], function ($bucket) {
         return $bucket->nodes[0]->status != 'healthy';
     });
 
@@ -281,7 +303,7 @@ echo writeText('INFO', '46').'Starting to Fill Buckets...'.PHP_EOL;
 
 echo progressBar(0, 6);
 
-echo progressBar(1, 6, "Filling Metadata Bucket...                  ");
+echo progressBar(1, 6, 'Filling Metadata Bucket...                  ');
 
 try {
     $clientBucket = $connection->openBucket('metadata');
@@ -291,7 +313,7 @@ try {
     echo '[WARN] Failed to Fill Metadata Bucket!'.PHP_EOL;
 }
 
-echo progressBar(2, 6, "Filling Client Bucket...                  ");
+echo progressBar(2, 6, 'Filling Client Bucket...                  ');
 
 try {
     $clientBucket = $connection->openBucket('client');
@@ -301,7 +323,7 @@ try {
     echo '[WARN] Failed to Fill Client Bucket!'.PHP_EOL;
 }
 
-echo progressBar(3, 6, "Filling Service Bucket...                  ");
+echo progressBar(3, 6, 'Filling Service Bucket...                  ');
 
 try {
     $serviceBucket = $connection->openBucket('service');
@@ -311,7 +333,7 @@ try {
     echo '[WARN] Failed to Fill Service Bucket!'.PHP_EOL;
 }
 
-echo progressBar(4, 6, "Filling Token Bucket...                  ");
+echo progressBar(4, 6, 'Filling Token Bucket...                  ');
 
 try {
     $tokenBucket = $connection->openBucket('token');
@@ -321,7 +343,7 @@ try {
     echo '[WARN] Failed to Fill Token Bucket!'.PHP_EOL;
 }
 
-echo progressBar(5, 6, "Filling Data Bucket...                  ");
+echo progressBar(5, 6, 'Filling Data Bucket...                  ');
 
 try {
     $dataBucket = $connection->openBucket('data');
@@ -331,9 +353,9 @@ try {
     echo '[WARN] Failed to Fill Data Bucket!'.PHP_EOL;
 }
 
-echo progressBar(6, 6, "Filling Response Bucket...                  ");
+echo progressBar(6, 6, 'Filling Response Bucket...                  ');
 
-echo progressBar(6, 6, "Buckets Filled.                            ");
+echo progressBar(6, 6, 'Buckets Filled.                            ');
 
 echo PHP_EOL;
 
@@ -380,6 +402,7 @@ const DB_PASSWORD = '{$credentials['pass']}';
 CONFIG;
 
 @unlink('../Config/Config.php');
+
 file_put_contents('../Config/Config.php', $config);
 
 echo "\033[42mSetup Finished.\033[0m".PHP_EOL;
